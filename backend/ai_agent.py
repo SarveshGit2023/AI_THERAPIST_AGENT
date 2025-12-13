@@ -1,5 +1,16 @@
-from langchain.agents import tool
-from tools import query_medgemma, call_emergency
+try:
+    from langchain.tools import tool
+except Exception:
+    try:
+        from langchain.agents import tool
+    except Exception:
+        def tool(func=None, **kwargs):
+            if func is None:
+                def decorator(f):
+                    return f
+                return decorator
+            return func
+from .tools import query_medgemma, call_emergency
 
 @tool
 def ask_mental_health_specialist(query: str) -> str:
@@ -22,31 +33,117 @@ def emergency_call_tool() -> None:
 
 
 @tool
-def find_nearby_therapists_by_location(location: str) -> str:
+def locate_therapist_tool(location: str) -> str:
     """
-    Finds and returns a list of licensed therapists near the specified location.
+    Finds and returns a list of licensed therapists near the specified location using OpenStreetMap.
 
     Args:
         location (str): The name of the city or area in which the user is seeking therapy support.
 
     Returns:
-        str: A newline-separated string containing therapist names and contact info.
+        str: A newline-separated string containing therapist names, addresses, and contact info.
     """
-    return (
-        f"Here are some therapists near {location}, {location}:\n"
-        "- Dr. Ayesha Kapoor - +1 (555) 123-4567\n"
-        "- Dr. James Patel - +1 (555) 987-6543\n"
-        "- MindCare Counseling Center - +1 (555) 222-3333"
-    )
+    import requests
+
+    try:
+        # Search for therapists/mental health facilities near the location
+        queries = [
+            f"therapist {location}",
+            f"psychologist {location}",
+            f"mental health clinic {location}",
+            f"counseling center {location}"
+        ]
+
+        all_results = []
+        seen_names = set()
+
+        for query in queries:
+            params = {
+                'q': query,
+                'format': 'json',
+                'limit': 3,
+                'addressdetails': 1,
+                'extratags': 1
+            }
+
+            response = requests.get('https://nominatim.openstreetmap.org/search',
+                                  params=params,
+                                  headers={'User-Agent': 'SafeSpace-AI-Therapist/1.0'})
+
+            if response.status_code == 200:
+                results = response.json()
+                for result in results:
+                    name = result.get('display_name', '').split(',')[0]
+                    if name and name not in seen_names and len(name) > 3:  # Filter out very short names
+                        seen_names.add(name)
+
+                        # Extract structured address information
+                        address_details = result.get('address', {})
+                        house_number = address_details.get('house_number', '')
+                        road = address_details.get('road', '')
+                        city = address_details.get('city', address_details.get('town', address_details.get('village', '')))
+                        state = address_details.get('state', '')
+                        postcode = address_details.get('postcode', '')
+
+                        # Build a clean address
+                        address_parts = []
+                        if house_number and road:
+                            address_parts.append(f"{house_number} {road}")
+                        elif road:
+                            address_parts.append(road)
+
+                        if city:
+                            address_parts.append(city)
+                        if state:
+                            address_parts.append(state)
+                        if postcode:
+                            address_parts.append(postcode)
+
+                        full_address = ", ".join(address_parts) if address_parts else result.get('display_name', 'Address not available')
+
+                        # Get coordinates for mapping
+                        lat = result.get('lat', '')
+                        lon = result.get('lon', '')
+
+                        # Format as a detailed entry
+                        entry = f"**{name}**\n"
+                        entry += f"📍 Address: {full_address}\n"
+                        entry += f"📞 Phone: Contact facility directly or search online directories\n"
+                        if lat and lon:
+                            entry += f"🗺️ Coordinates: {lat}, {lon}\n"
+                        entry += "---"
+
+                        all_results.append(entry)
+
+                        if len(all_results) >= 5:  # Limit to 5 results total
+                            break
+
+            if len(all_results) >= 5:
+                break
+
+        if all_results:
+            header = f"Here are mental health professionals and clinics I found near {location}:\n\n"
+            footer = "\n\n💡 **Note**: Phone numbers aren't available through public maps. I recommend:\n"
+            footer += "• Calling the facility directly using the address\n"
+            footer += "• Searching online directories like Psychology Today or Healthgrades\n"
+            footer += "• Contacting your local mental health association\n"
+            footer += "• Using Google Maps or Yelp for additional contact information"
+
+            return header + "\n\n".join(all_results) + footer
+        else:
+            return f"I couldn't find specific therapist listings near {location} using OpenStreetMap. Please consider searching for local mental health directories or contacting your local health department for professional referrals."
+
+    except Exception as e:
+        return f"I'm having trouble accessing location services right now. For immediate help, please contact your local mental health crisis hotline or search for therapists in {location} through online directories."
 
 
 # Step1: Create an AI Agent & Link to backend
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
-from config import OPENAI_API_KEY
+from .config import OPENAI_API_KEY
 
 
-tools = [ask_mental_health_specialist, emergency_call_tool, find_nearby_therapists_by_location]
+tools = [ask_mental_health_specialist, emergency_call_tool, locate_therapist_tool]
 llm = ChatOpenAI(model="gpt-4", temperature=0.2, api_key=OPENAI_API_KEY)
 graph = create_react_agent(llm, tools=tools)
 

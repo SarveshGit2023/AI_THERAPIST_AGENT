@@ -1,5 +1,8 @@
 # Step1: Setup Ollama with Medgemma tool
-import ollama
+try:
+    import ollama
+except Exception:
+    ollama = None
 
 def query_medgemma(prompt: str) -> str:
     """
@@ -22,7 +25,8 @@ def query_medgemma(prompt: str) -> str:
     - Mirror the user's language level
     - Always keep the conversation going by asking open ended questions to dive into the root cause of patients problem
     """
-    
+    if ollama is None:
+        return "I'm having technical difficulties: language model backend is unavailable right now. Please try again later."
     try:
         response = ollama.chat(
             model='alibayram/medgemma:4b',
@@ -37,21 +41,32 @@ def query_medgemma(prompt: str) -> str:
             }
         )
         return response['message']['content'].strip()
-    except Exception as e:
-        return f"I'm having technical difficulties, but I want you to know your feelings matter. Please try again shortly."
+    except Exception:
+        return "I'm having technical difficulties, but I want you to know your feelings matter. Please try again shortly."
 
 
 # Step2: Setup Twilio calling API tool
-from twilio.rest import Client
-from config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, EMERGENCY_CONTACT
+try:
+    from twilio.rest import Client
+except Exception:
+    Client = None
+from .config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, EMERGENCY_CONTACT
 
 def call_emergency():
-    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    call = client.calls.create(
-        to=EMERGENCY_CONTACT,
-        from_=TWILIO_FROM_NUMBER,
-        url="http://demo.twilio.com/docs/voice.xml"  # Can customize message
-    )
+    if Client is None:
+        print("Warning: Twilio client not available; cannot place emergency call.")
+        return None
+    try:
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        call = client.calls.create(
+            to=EMERGENCY_CONTACT,
+            from_=TWILIO_FROM_NUMBER,
+            url="http://demo.twilio.com/docs/voice.xml"  # Can customize message
+        )
+        return call
+    except Exception:
+        print("Failed to place emergency call (Twilio error)")
+        return None
 
 
 
