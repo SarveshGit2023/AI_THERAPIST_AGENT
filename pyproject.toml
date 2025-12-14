@@ -12,6 +12,7 @@ dependencies = [
     "langgraph>=0.6.0",
     "ollama>=0.5.1",
     "pydantic>=2.11.7",
+    "python-multipart>=0.0.20",
     "requests>=2.32.4",
     "streamlit>=1.47.1",
     "twilio>=9.7.0",
